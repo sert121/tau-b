@@ -49,7 +49,6 @@ def load_tau_bench_data(domain: str, split: str = "test") -> Dict[str, Any]:
                     data[file_name.replace('.json', '')] = json.load(f)
 
     
-    # Load tasks from the actual tasks file
     tasks = load_tau_bench_tasks(domain, split)
     
     return {
@@ -150,107 +149,8 @@ def load_tau_bench_tools(domain: str) -> List[Dict[str, Any]]:
     return tools_info
 
 
-def create_conversation_sample(
-    task: Dict[str, Any],
-    domain_data: Dict[str, Any],
-    include_system_prompt: bool = True,
-    max_turns: Optional[int] = None
-) -> Sample:
-    """Create a conversation sample from a tau-bench task.
-    
-    Args:
-        task: Task dictionary or tau-bench Task object with instruction, actions, etc.
-        domain_data: Domain-specific data (users, orders, etc.)
-        include_system_prompt: Whether to include system prompt
-        max_turns: Maximum number of conversation turns
-    
-    Returns:
-        Sample object for inspect_evals
-    """
-    messages = []
-    
-    # Handle both dict and tau-bench Task object
-    if hasattr(task, 'instruction'):
-        # tau-bench Task object
-        instruction = task.instruction
-        user_id = task.user_id
-        annotator = getattr(task, 'annotator', 0)
-        actions = task.actions if hasattr(task, 'actions') else []
-        outputs = getattr(task, 'outputs', [])
-    else:
-        # Dictionary
-        instruction = task.get("instruction", "")
-        user_id = task.get("user_id", "unknown")
-        annotator = task.get("annotator", 0)
-        actions = task.get("actions", [])
-        outputs = task.get("outputs", [])
-    
-    # Add system prompt if requested
-    if include_system_prompt:
-        system_prompt = create_system_prompt("retail")  # Default domain
-        messages.append(ChatMessageSystem(content=system_prompt))
-    
-    # Add user instruction
-    messages.append(ChatMessageUser(content=instruction))
-    
-    # Add expected actions as target
-    expected_actions = actions
-    
-    return Sample(
-        id=f"{user_id}_{annotator}",
-        input=messages,
-        target=expected_actions,
-        metadata={
-            "domain": "retail",  # Default domain
-            "user_id": user_id,
-            "annotator": annotator,
-            "expected_outputs": outputs,
-            "conversation_type": "multi_turn"
-        }
-    )
 
 
-def create_simple_task_sample(
-    task: Dict[str, Any],
-    domain_data: Dict[str, Any]
-) -> Sample:
-    """Create a simplified single-turn task sample.
-    
-    This converts the multi-turn tau-bench tasks into simpler
-    single-turn tasks for basic evaluation.
-    """
-    # Handle both dict and tau-bench Task object
-    if hasattr(task, 'instruction'):
-        # tau-bench Task object
-        instruction = task.instruction
-        user_id = task.user_id
-        annotator = getattr(task, 'annotator', 0)
-        actions = task.actions if hasattr(task, 'actions') else []
-    else:
-        # Dictionary
-        instruction = task.get("instruction", "")
-        user_id = task.get("user_id", "unknown")
-        annotator = task.get("annotator", 0)
-        actions = task.get("actions", [])
-    
-    # Create a simple input message
-    input_message = ChatMessageUser(content=instruction)
-    
-    # For simple tasks, we might just check if the model can understand
-    # the instruction and provide a reasonable response
-    expected_response = "I understand your request. Let me help you with that."
-    
-    return Sample(
-        id=f"simple_{user_id}_{annotator}",
-        input=[input_message],
-        target=expected_response,
-        metadata={
-            "domain": "retail",  # Default domain
-            "user_id": user_id,
-            "task_type": "simple_understanding",
-            "original_actions": actions
-        }
-    )
 
 
 def create_tool_calling_sample(
@@ -287,8 +187,7 @@ def create_tool_calling_sample(
     
     return Sample(
         id=f"tool_{task.get('user_id', 'unknown')}_{task.get('annotator', 0)}",
-        input=messages,
-        target=expected_tool_calls,
+        input="",
         metadata={
             "domain": task.get("domain", "retail"),
             "user_id": task.get("user_id"),
@@ -362,12 +261,6 @@ def tau_bench_dataset(
     # Create samples based on task type
     samples = []
     for task in tasks:
-        if task_type == "conversation":
-            sample = create_conversation_sample(task, data["data"])
-        elif task_type == "simple":
-            sample = create_simple_task_sample(task, data["data"])
-        elif task_type == "tool_calling":
-            # This would need the available tools to be defined
             available_tools = []  # Placeholder
             sample = create_tool_calling_sample(task, data["data"], available_tools)
         else:
