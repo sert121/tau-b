@@ -1,0 +1,56 @@
+# Tau-bench Inspect Evaluation Configuration
+
+# Model configuration
+model:
+  provider: "openai"
+  name: "gpt-4o"
+  temperature: 0.0
+
+# Dataset configuration
+dataset:
+  domain: "retail"  # or "airline"
+  split: "test"     # or "train", "dev"
+  task_type: "conversation"  # or "simple", "tool_calling"
+  max_samples: 10
+  shuffle: true
+  seed: 42
+
+# Solver configuration
+solver:
+  strategy: "tool_calling"  # or "react", "act", "few_shot"
+  domain: "retail"          # or "airline"
+  max_iterations: 10
+  max_turns: 5
+
+# Scoring configuration
+scoring:
+  mode: "comprehensive"  # or "simple", "action_only"
+  domain: "retail"       # or "airline"
+
+# Evaluation tasks to run
+tasks:
+  - name: "retail_simple"
+    task: "tau_bench_retail_simple"
+    max_samples: 5
+    
+  - name: "retail_tool_calling"
+    task: "tau_bench_retail_tool_calling"
+    max_samples: 3
+    
+  - name: "retail_react"
+    task: "tau_bench_retail_react"
+    max_samples: 3
+    
+  - name: "airline_simple"
+    task: "tau_bench_airline_simple"
+    max_samples: 3
+    
+  - name: "airline_tool_calling"
+    task: "tau_bench_airline_tool_calling"
+    max_samples: 3
+
+# Output configuration
+output:
+  results_dir: "results"
+  log_level: "INFO"
+  save_trajectories: true
