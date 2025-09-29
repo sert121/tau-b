@@ -5,464 +5,129 @@ This module provides the main evaluation tasks that follow the inspect_evals pat
 while preserving the core functionality of tau-bench.
 """
 
+import json
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Union
 from inspect_ai import Task, task
 from inspect_ai.solver import system_message, generate, basic_agent
 from inspect_ai.tool import Tool
+from inspect_ai.scorer import Scorer, Score, Target, scorer, accuracy
+from inspect_ai.solver import TaskState
 
-from .dataset import tau_bench_dataset
-from .solver import create_conversation_solver, create_multi_turn_solver
-from .scoring import tau_bench_scorer, simple_tau_bench_scorer, action_only_scorer
-from .prompts import get_system_prompt, get_few_shot_examples
-
+from dataset import tau_bench_dataset, load_tau_bench_tools
+from agents import tool_calling_agent
+from envs import get_env
+from envs.user import UserStrategy
 
 # Task directory for configuration files
 TASK_DIR = Path(__file__).parent
 
 
-@task
-def tau_bench_retail_tool_calling(
-    split: str = "test",
-    max_samples: Optional[int] = None,
-    shuffle: bool = True,
-    seed: Optional[int] = None
-) -> Task:
-    """Tau-bench retail domain with tool calling strategy.
-    
-    This evaluation tests the model's ability to use tools effectively
-    in a retail customer service context.
-    """
-    return Task(
-        dataset=tau_bench_dataset(
-            domain="retail",
-            split=split,
-            task_type="tool_calling",
-            max_samples=max_samples,
-            shuffle=shuffle,
-            seed=seed
-        ),
-        solver=create_conversation_solver(
-            strategy="tool_calling",
-            domain="retail"
-        ),
-        scorer=tau_bench_scorer(domain="retail", scoring_mode="comprehensive")
+def create_tau_bench_env(domain: str, user_strategy: str = "llm", user_model: str = "gpt-4o", task_split: str = "test", user_provider: str = "openai") -> Any:  
+    """Create a tau-bench environment for the specified domain."""
+    return get_env(  
+        env_name=domain,  
+        user_strategy=user_strategy,  
+        user_model=user_model,  
+        task_split=task_split,
+        user_provider=user_provider
     )
 
 
-@task
-def tau_bench_retail_react(
-    split: str = "test",
-    max_samples: Optional[int] = None,
-    shuffle: bool = True,
-    seed: Optional[int] = None
-) -> Task:
-    """Tau-bench retail domain with ReAct strategy.
-    
-    This evaluation tests the model's reasoning and acting capabilities
-    in a retail customer service context.
+def load_wiki_content(domain: str) -> str:  
+    """Load wiki content for the specified domain."""
+    if domain == "retail":  
+        from envs.retail.wiki import WIKI  
+        return WIKI  
+    elif domain == "airline":  
+        from envs.airline.wiki import WIKI  
+        return WIKI  
+    else:  
+        raise ValueError(f"Unknown domain: {domain}")
+
+
+@scorer(metrics=[accuracy()])
+def create_tau_bench_scorer() -> Scorer:
     """
-    return Task(
-        dataset=tau_bench_dataset(
-            domain="retail",
-            split=split,
-            task_type="conversation",
-            max_samples=max_samples,
-            shuffle=shuffle,
-            seed=seed
-        ),
-        solver=create_conversation_solver(
-            strategy="react",
-            domain="retail"
-        ),
-        scorer=tau_bench_scorer(domain="retail", scoring_mode="comprehensive")
-    )
-
-
-@task
-def tau_bench_retail_act(
-    split: str = "test",
-    max_samples: Optional[int] = None,
-    shuffle: bool = True,
-    seed: Optional[int] = None
-) -> Task:
-    """Tau-bench retail domain with Act strategy.
+    Create a tau-bench compatible scorer that evaluates based on reward and actions.
     
-    This evaluation tests the model's action-oriented approach
-    in a retail customer service context.
+    This scorer follows the original tau-bench evaluation logic:
+    1. Check if database changes are correct (actions executed properly)
+    2. Check if expected outputs are present in responses
+    3. Return reward-based score (0.0 or 1.0)
     """
-    return Task(
-        dataset=tau_bench_dataset(
-            domain="retail",
-            split=split,
-            task_type="conversation",
-            max_samples=max_samples,
-            shuffle=shuffle,
-            seed=seed
-        ),
-        solver=create_conversation_solver(
-            strategy="act",
-            domain="retail"
-        ),
-        scorer=tau_bench_scorer(domain="retail", scoring_mode="comprehensive")
-    )
-
-
-@task
-def tau_bench_retail_few_shot(
-    split: str = "test",
-    max_samples: Optional[int] = None,
-    shuffle: bool = True,
-    seed: Optional[int] = None
-) -> Task:
-    """Tau-bench retail domain with few-shot strategy.
-    
-    This evaluation tests the model's ability to learn from examples
-    in a retail customer service context.
-    """
-    return Task(
-        dataset=tau_bench_dataset(
-            domain="retail",
-            split=split,
-            task_type="conversation",
-            max_samples=max_samples,
-            shuffle=shuffle,
-            seed=seed
-        ),
-        solver=create_conversation_solver(
-            strategy="few_shot",
-            domain="retail"
-        ),
-        scorer=tau_bench_scorer(domain="retail", scoring_mode="comprehensive")
-    )
-
-
-@task
-def tau_bench_airline_tool_calling(
-    split: str = "test",
-    max_samples: Optional[int] = None,
-    shuffle: bool = True,
-    seed: Optional[int] = None
-) -> Task:
-    """Tau-bench airline domain with tool calling strategy.
-    
-    This evaluation tests the model's ability to use tools effectively
-    in an airline customer service context.
-    """
-    return Task(
-        dataset=tau_bench_dataset(
-            domain="airline",
-            split=split,
-            task_type="tool_calling",
-            max_samples=max_samples,
-            shuffle=shuffle,
-            seed=seed
-        ),
-        solver=create_conversation_solver(
-            strategy="tool_calling",
-            domain="airline"
-        ),
-        scorer=tau_bench_scorer(domain="airline", scoring_mode="comprehensive")
-    )
-
-
-@task
-def tau_bench_airline_react(
-    split: str = "test",
-    max_samples: Optional[int] = None,
-    shuffle: bool = True,
-    seed: Optional[int] = None
-) -> Task:
-    """Tau-bench airline domain with ReAct strategy.
-    
-    This evaluation tests the model's reasoning and acting capabilities
-    in an airline customer service context.
-    """
-    return Task(
-        dataset=tau_bench_dataset(
-            domain="airline",
-            split=split,
-            task_type="conversation",
-            max_samples=max_samples,
-            shuffle=shuffle,
-            seed=seed
-        ),
-        solver=create_conversation_solver(
-            strategy="react",
-            domain="airline"
-        ),
-        scorer=tau_bench_scorer(domain="airline", scoring_mode="comprehensive")
-    )
-
-
-@task
-def tau_bench_airline_act(
-    split: str = "test",
-    max_samples: Optional[int] = None,
-    shuffle: bool = True,
-    seed: Optional[int] = None
-) -> Task:
-    """Tau-bench airline domain with Act strategy.
-    
-    This evaluation tests the model's action-oriented approach
-    in an airline customer service context.
-    """
-    return Task(
-        dataset=tau_bench_dataset(
-            domain="airline",
-            split=split,
-            task_type="conversation",
-            max_samples=max_samples,
-            shuffle=shuffle,
-            seed=seed
-        ),
-        solver=create_conversation_solver(
-            strategy="act",
-            domain="airline"
-        ),
-        scorer=tau_bench_scorer(domain="airline", scoring_mode="comprehensive")
-    )
-
-
-@task
-def tau_bench_airline_few_shot(
-    split: str = "test",
-    max_samples: Optional[int] = None,
-    shuffle: bool = True,
-    seed: Optional[int] = None
-) -> Task:
-    """Tau-bench airline domain with few-shot strategy.
-    
-    This evaluation tests the model's ability to learn from examples
-    in an airline customer service context.
-    """
-    return Task(
-        dataset=tau_bench_dataset(
-            domain="airline",
-            split=split,
-            task_type="conversation",
-            max_samples=max_samples,
-            shuffle=shuffle,
-            seed=seed
-        ),
-        solver=create_conversation_solver(
-            strategy="few_shot",
-            domain="airline"
-        ),
-        scorer=tau_bench_scorer(domain="airline", scoring_mode="comprehensive")
-    )
-
-
-# Simplified evaluation tasks
-@task
-def tau_bench_retail_simple(
-    split: str = "test",
-    max_samples: Optional[int] = None,
-    shuffle: bool = True,
-    seed: Optional[int] = None
-) -> Task:
-    """Simplified tau-bench retail evaluation.
-    
-    This is a basic evaluation that tests understanding and response quality
-    without complex tool calling or multi-turn conversations.
-    """
-    return Task(
-        dataset=tau_bench_dataset(
-            domain="retail",
-            split=split,
-            task_type="simple",
-            max_samples=max_samples,
-            shuffle=shuffle,
-            seed=seed
-        ),
-        solver=[system_message(get_system_prompt("retail", "tool_calling")), generate()],
-        scorer=simple_tau_bench_scorer()
-    )
-
-
-@task
-def tau_bench_airline_simple(
-    split: str = "test",
-    max_samples: Optional[int] = None,
-    shuffle: bool = True,
-    seed: Optional[int] = None
-) -> Task:
-    """Simplified tau-bench airline evaluation.
-    
-    This is a basic evaluation that tests understanding and response quality
-    without complex tool calling or multi-turn conversations.
-    """
-    return Task(
-        dataset=tau_bench_dataset(
-            domain="airline",
-            split=split,
-            task_type="simple",
-            max_samples=max_samples,
-            shuffle=shuffle,
-            seed=seed
-        ),
-        solver=[system_message(get_system_prompt("airline", "tool_calling")), generate()],
-        scorer=simple_tau_bench_scorer()
-    )
-
-
-# Action-only evaluation tasks
-@task
-def tau_bench_retail_actions(
-    split: str = "test",
-    max_samples: Optional[int] = None,
-    shuffle: bool = True,
-    seed: Optional[int] = None
-) -> Task:
-    """Tau-bench retail evaluation focused on action accuracy.
-    
-    This evaluation specifically tests the model's ability to perform
-    the correct actions in response to customer requests.
-    """
-    return Task(
-        dataset=tau_bench_dataset(
-            domain="retail",
-            split=split,
-            task_type="tool_calling",
-            max_samples=max_samples,
-            shuffle=shuffle,
-            seed=seed
-        ),
-        solver=create_conversation_solver(
-            strategy="tool_calling",
-            domain="retail"
-        ),
-        scorer=action_only_scorer()
-    )
-
-
-@task
-def tau_bench_airline_actions(
-    split: str = "test",
-    max_samples: Optional[int] = None,
-    shuffle: bool = True,
-    seed: Optional[int] = None
-) -> Task:
-    """Tau-bench airline evaluation focused on action accuracy.
-    
-    This evaluation specifically tests the model's ability to perform
-    the correct actions in response to customer requests.
-    """
-    return Task(
-        dataset=tau_bench_dataset(
-            domain="airline",
-            split=split,
-            task_type="tool_calling",
-            max_samples=max_samples,
-            shuffle=shuffle,
-            seed=seed
-        ),
-        solver=create_conversation_solver(
-            strategy="tool_calling",
-            domain="airline"
-        ),
-        scorer=action_only_scorer()
-    )
-
-
-# Multi-turn conversation tasks
-@task
-def tau_bench_retail_conversation(
-    split: str = "test",
-    max_samples: Optional[int] = None,
-    max_turns: int = 5,
-    shuffle: bool = True,
-    seed: Optional[int] = None
-) -> Task:
-    """Tau-bench retail multi-turn conversation evaluation.
-    
-    This evaluation tests the model's ability to maintain context
-    and handle multi-turn conversations in a retail context.
-    """
-    return Task(
-        dataset=tau_bench_dataset(
-            domain="retail",
-            split=split,
-            task_type="conversation",
-            max_samples=max_samples,
-            shuffle=shuffle,
-            seed=seed
-        ),
-        solver=create_multi_turn_solver(
-            strategy="tool_calling",
-            domain="retail",
-            max_turns=max_turns
-        ),
-        scorer=tau_bench_scorer(domain="retail", scoring_mode="comprehensive")
-    )
-
-
-@task
-def tau_bench_airline_conversation(
-    split: str = "test",
-    max_samples: Optional[int] = None,
-    max_turns: int = 5,
-    shuffle: bool = True,
-    seed: Optional[int] = None
-) -> Task:
-    """Tau-bench airline multi-turn conversation evaluation.
-    
-    This evaluation tests the model's ability to maintain context
-    and handle multi-turn conversations in an airline context.
-    """
-    return Task(
-        dataset=tau_bench_dataset(
-            domain="airline",
-            split=split,
-            task_type="conversation",
-            max_samples=max_samples,
-            shuffle=shuffle,
-            seed=seed
-        ),
-        solver=create_multi_turn_solver(
-            strategy="tool_calling",
-            domain="airline",
-            max_turns=max_turns
-        ),
-        scorer=tau_bench_scorer(domain="airline", scoring_mode="comprehensive")
-    )
-
-
-# Cross-domain evaluation
-@task
-def tau_bench_cross_domain(
-    domains: List[str] = ["retail", "airline"],
-    split: str = "test",
-    max_samples: Optional[int] = None,
-    shuffle: bool = True,
-    seed: Optional[int] = None
-) -> Task:
-    """Cross-domain tau-bench evaluation.
-    
-    This evaluation tests the model's ability to handle both retail
-    and airline domains in a single evaluation.
-    """
-    # Combine datasets from multiple domains
-    datasets = []
-    for domain in domains:
-        domain_dataset = tau_bench_dataset(
-            domain=domain,
-            split=split,
-            task_type="conversation",
-            max_samples=max_samples // len(domains) if max_samples else None,
-            shuffle=shuffle,
-            seed=seed
+    async def score(state: TaskState, target: Target) -> Score:
+        # Extract reward and info from state metadata (set by the agent)
+        reward = state.metadata.get("reward", 0.0)
+        env_info = state.metadata.get("env_info", {})
+        
+        # Determine if the task was completed successfully
+        success = reward == 1.0
+        
+        # Extract additional scoring information
+        r_actions = env_info.get("r_actions", False)
+        r_outputs = env_info.get("r_outputs", 1.0)
+        outputs = env_info.get("outputs", {})
+        
+        # Create detailed score information
+        score_info = {
+            "reward": reward,
+            "r_actions": r_actions,
+            "r_outputs": r_outputs,
+            "outputs": outputs,
+            "success": success
+        }
+        
+        # Return score with success/failure and detailed info
+        return Score(
+            value=1.0 if success else 0.0,
+            answer=f"Reward: {reward}, Actions: {r_actions}, Outputs: {r_outputs}",
+            metadata=score_info
         )
-        datasets.append(domain_dataset)
     
-    # Combine datasets (this would need proper dataset merging)
-    combined_dataset = datasets[0]  # Simplified for now
+    return score
+
+
+
+@task
+def create_tau_bench_task_airline(
+    task_split: str = "test",
+    user_strategy: str = "llm", 
+    user_model: str = "gpt-4o",
+    max_steps: int = 30,
+    temperature: float = 0.0
+) -> Task:  
+    """
+    Create an airline domain tau-bench task for inspect_ai evaluation.
     
-    return Task(
-        dataset=combined_dataset,
-        solver=create_conversation_solver(
-            strategy="tool_calling",
-            domain="mixed"
-        ),
-        scorer=tau_bench_scorer(domain="mixed", scoring_mode="comprehensive")
+    Args:
+        task_split: Data split to use ("train", "test", "dev")
+        user_strategy: User simulation strategy
+        user_model: Model for user simulation
+        max_steps: Maximum number of agent steps
+        temperature: Temperature for generation
+    
+    Returns:
+        Task object for inspect_ai evaluation
+    """
+    # Load dataset  
+    dataset = tau_bench_dataset(domain="airline", split=task_split)  
+      
+    # Create environment and tools
+    env = create_tau_bench_env("airline", user_strategy, user_model, task_split, user_provider="openai")
+    tools_info = load_tau_bench_tools("airline")  
+    wiki = load_wiki_content("airline")
+      
+    # Create solver using tool calling agent
+    solver = tool_calling_agent(
+        env=env,
+        tools_info=tools_info, 
+        wiki=wiki,
+        max_steps=max_steps,
+        temperature=temperature
     )
+      
+    # Create scorer
+    scorer = create_tau_bench_scorer()
+      
+    return Task(dataset=dataset, solver=solver, scorer=scorer)

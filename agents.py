@@ -1,9 +1,100 @@
-from typing import Any, Dict, List
-from inspect_ai.solver import Solver, TaskState, Generate
-from inspect_ai.tool import Tool
+import json
+from typing import Any, Dict, List, Optional
+from inspect_ai.solver import Solver, TaskState, Generate, solver
+from inspect_ai.tool import Tool, ToolInfo, ToolParam, ToolParams
 from inspect_ai.model import ChatMessage, ChatMessageSystem, ChatMessageUser
 from tau_bench_dataclasses import Action, RESPOND_ACTION_NAME
 from envs.base import Env
+
+
+def message_to_action_inspect(message: ChatMessage) -> Action:  
+    """Convert inspect_ai message to tau-bench Action (matching original logic)."""  
+    if hasattr(message, 'tool_calls') and message.tool_calls:  
+        tool_call = message.tool_calls[0]  
+        return Action(  
+            name=tool_call.function,  
+            kwargs=tool_call.arguments if tool_call.arguments else {}  
+        )  
+    else:  
+        return Action(  
+            name=RESPOND_ACTION_NAME,   
+            kwargs={"content": message.content}  
+        )
+
+
+def create_tool_param(param_dict: Dict[str, Any]) -> Optional[ToolParam]:
+    """Helper function to create ToolParam instances recursively"""
+    if not param_dict:
+        return None
+    
+    # Handle nested properties
+    properties = {}
+    if param_dict.get("properties"):
+        properties = {
+            key: create_tool_param(value)
+            for key, value in param_dict["properties"].items()
+            if value is not None
+        }
+    
+    # Handle array items
+    items = None
+    if param_dict.get("items"):
+        items = create_tool_param(param_dict["items"])
+    
+    return ToolParam(
+        type=param_dict.get("type", "string"),
+        description=param_dict.get("description"),
+        default=param_dict.get("default"),
+        enum=param_dict.get("enum"),
+        items=items,
+        properties=properties,
+        additionalProperties=param_dict.get("additionalProperties"),
+        required=param_dict.get("required"),
+    )
+
+
+def create_tool_info_from_dict(tool_dict: Dict[str, Any]) -> ToolInfo:
+    """
+    Create a ToolInfo instance from a dictionary.
+
+    Args:
+        tool_dict: Dictionary containing tool information
+
+    Returns:
+        ToolInfo instance
+    """
+    # Extract function information from the tool structure
+    if "function" in tool_dict:
+        func_info = tool_dict["function"]
+        name = func_info.get("name", "")
+        description = func_info.get("description", "")
+        parameters_dict = func_info.get("parameters", {})
+    else:
+        # Fallback for direct structure
+        name = tool_dict.get("name", "")
+        description = tool_dict.get("description", "")
+        parameters_dict = tool_dict.get("parameters", {})
+
+    # Create the parameters object
+    parameters = None
+    if parameters_dict:
+        parameters = create_tool_param(parameters_dict)
+
+    # Handle case where parameters is None
+    if parameters is None:
+        parameters = create_tool_param({"type": "object", "properties": {}, "required": []})
+
+    tool_params = ToolParams(
+        properties=parameters.properties,
+        required=parameters.required or [],
+    )
+    # Create and return the ToolInfo instance
+    return ToolInfo(
+        name=name,
+        description=description,
+        parameters=tool_params,
+    )
+
 
 @solver  
 def tool_calling_agent(  
@@ -51,7 +142,7 @@ def tool_calling_agent(
         # Main interaction loop (matching tau-bench logic)  
         for _ in range(max_steps):  
             # Generate response with tools  
-            await generate(state, tool_calls="auto", temperature=temperature)  
+            await generate(state, tool_calls="none", temperature=temperature)  
               
             # Convert inspect_ai output to tau-bench action  
             action = message_to_action_inspect(state.output.message)  
@@ -84,16 +175,3 @@ def tool_calling_agent(
       
     return solve  
   
-def message_to_action_inspect(message: ChatMessage) -> Action:  
-    """Convert inspect_ai message to tau-bench Action (matching original logic)."""  
-    if hasattr(message, 'tool_calls') and message.tool_calls:  
-        tool_call = message.tool_calls[0]  
-        return Action(  
-            name=tool_call.function,  
-            kwargs=json.loads(tool_call.arguments) if tool_call.arguments else {}  
-        )  
-    else:  
-        return Action(  
-            name=RESPOND_ACTION_NAME,   
-            kwargs={"content": message.content}  
-        )

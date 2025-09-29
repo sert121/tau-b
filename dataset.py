@@ -8,8 +8,12 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from inspect_ai.dataset import Dataset, Sample
+from inspect_ai.dataset import Dataset, Sample, MemoryDataset
 from inspect_ai.model import ChatMessage, ChatMessageAssistant, ChatMessageSystem, ChatMessageUser
+from inspect_ai.solver import Solver, TaskState, Generate, solver
+from inspect_ai.tool import Tool, ToolInfo, ToolParam, ToolParams
+from tau_bench_dataclasses import Action, RESPOND_ACTION_NAME
+from envs.base import Env
 
 
 def load_tau_bench_data(domain: str, split: str = "test") -> Dict[str, Any]:
@@ -28,7 +32,11 @@ def load_tau_bench_data(domain: str, split: str = "test") -> Dict[str, Any]:
         tasks_path = Path(__file__).parent / "retail" / f"tasks_{split}.py"
     elif domain == "airline":
         data_path = Path(__file__).parent / "airline" / "data"
-        tasks_path = Path(__file__).parent / "airline" / f"tasks_{split}.py"
+        if split == "test":
+            tasks_path = Path(__file__).parent / "airline" / f"tasks_{split}.py"
+        else:
+            tasks_path = Path(__file__).parent / "airline" / "tasks.py"
+
     else:
         raise ValueError(f"Unknown domain: {domain}")
     
@@ -48,6 +56,7 @@ def load_tau_bench_data(domain: str, split: str = "test") -> Dict[str, Any]:
                 with open(file_path, 'r') as f:
                     data[file_name.replace('.json', '')] = json.load(f)
 
+    print(len(data))
     
     tasks = load_tau_bench_tasks(domain, split)
     
@@ -92,6 +101,8 @@ def load_tau_bench_tasks(domain: str, split: str) -> List[Dict[str, Any]]:
             return module.TASKS_TRAIN
         elif hasattr(module, 'TASKS_DEV'):
             return module.TASKS_DEV
+        elif hasattr(module, 'TASKS_TEST'):
+            return module.TASKS_TEST
         elif hasattr(module, 'tasks'):
             return module.tasks
         else:
@@ -112,7 +123,7 @@ def load_tau_bench_tools(domain: str) -> List[Dict[str, Any]]:
     Returns:
         List of tool information dictionaries
     """
-    tools_path = Path(__file__).parent / domain / "tools"
+    tools_path = Path(__file__).parent / "envs" / domain / "tools"
     
     tools_info = []
     
@@ -136,14 +147,22 @@ def load_tau_bench_tools(domain: str) -> List[Dict[str, Any]]:
                 attr = getattr(module, attr_name)
                 if (hasattr(attr, 'get_info') and 
                     hasattr(attr, 'invoke') and 
-                    callable(getattr(attr, 'get_info'))):
+                    callable(getattr(attr, 'get_info')) and
+                    not attr_name.startswith('_') and  # Skip private attributes
+                    attr_name != 'Tool'):  # Skip the base Tool class
                     # This looks like a tool class
-                    tool_info = attr.get_info()
-                    tools_info.append(tool_info)
-                    break
+                    try:
+                        tool_info = attr.get_info()
+                        tools_info.append(tool_info)
+                        break
+                    except NotImplementedError:
+                        # Skip classes that haven't implemented get_info
+                        continue
                     
         except Exception as e:
             print(f"Warning: Could not load tool {tool_file.name}: {e}")
+            import traceback
+            traceback.print_exc()
             continue
     
     return tools_info
@@ -152,11 +171,11 @@ def load_tau_bench_tools(domain: str) -> List[Dict[str, Any]]:
 
 
 
-
 def create_tool_calling_sample(
     task: Dict[str, Any],
     domain_data: Dict[str, Any],
-    available_tools: List[Dict[str, Any]]
+    available_tools: List[Dict[str, Any]],
+    task_index: int = 0
 ) -> Sample:
     """Create a sample that tests tool calling capabilities.
     
@@ -174,26 +193,48 @@ def create_tool_calling_sample(
     system_prompt = create_tool_calling_system_prompt(available_tools)
     messages.append(ChatMessageSystem(content=system_prompt))
     
+    # Handle both Task objects and dictionaries
+    if hasattr(task, 'instruction'):
+        # Task object
+        instruction = task.instruction
+        user_id = task.user_id
+        annotator = getattr(task, 'annotator', 0)  # Default to 0 if annotator not available
+        actions = task.actions if hasattr(task, 'actions') else []
+    else:
+        # Dictionary
+        instruction = task.get("instruction", "")
+        user_id = task.get("user_id", "unknown")
+        annotator = task.get("annotator", 0)
+        actions = task.get("actions", [])
+    
     # Add user instruction
-    messages.append(ChatMessageUser(content=task["instruction"]))
+    messages.append(ChatMessageUser(content=instruction))
     
     # Expected tool calls
     expected_tool_calls = []
-    for action in task.get("actions", []):
-        expected_tool_calls.append({
-            "name": action["name"],
-            "arguments": action.get("arguments", {})
-        })
+    for action in actions:
+        if hasattr(action, 'name'):
+            # Action object
+            expected_tool_calls.append({
+                "name": action.name,
+                "arguments": action.kwargs if hasattr(action, 'kwargs') else {}
+            })
+        else:
+            # Dictionary
+            expected_tool_calls.append({
+                "name": action.get("name", ""),
+                "arguments": action.get("arguments", {})
+            })
     
     return Sample(
-        id=f"tool_{task.get('user_id', 'unknown')}_{task.get('annotator', 0)}",
+        id=f"tool_{user_id}_{annotator}_{task_index}",
         input="",
         metadata={
-            "domain": task.get("domain", "retail"),
-            "user_id": task.get("user_id"),
+            "domain": "retail",  # Default domain, can be overridden by caller
+            "user_id": user_id,
             "task_type": "tool_calling",
             "available_tools": available_tools,
-            "expected_actions": task.get("actions", [])
+            "expected_actions": actions
         }
     )
 
@@ -223,6 +264,45 @@ Available tools:"""
         base_prompt += f"\n- {tool['name']}: {tool.get('description', 'No description available')}"
     
     return base_prompt
+
+
+def get_type(type_str: str | None) -> str:
+    """Convert type string to appropriate type."""
+    if type_str is None:
+        return "string"  # Default type
+    return type_str
+
+
+def create_tool_param(param_dict: Dict[str, Any] | None) -> ToolParam | None:
+    """Helper function to create ToolParam instances recursively"""
+    if param_dict is None:
+        return None
+
+    # Handle nested properties
+    properties = {}
+    if param_dict.get("properties"):
+        properties = {
+            key: create_tool_param(value)
+            for key, value in param_dict["properties"].items()
+            if value is not None
+        }
+
+    # Handle array items
+    items = None
+    if param_dict.get("items"):
+        items = create_tool_param(param_dict["items"])
+
+    return ToolParam(
+        type=get_type(param_dict.get("type")),
+        description=param_dict.get("description"),
+        default=param_dict.get("default"),
+        enum=param_dict.get("enum"),
+        items=items,
+        properties=properties,  # type: ignore
+        additionalProperties=param_dict.get("additionalProperties"),
+        required=param_dict.get("required"),
+    )
+
 
 
 def tau_bench_dataset(
@@ -260,12 +340,13 @@ def tau_bench_dataset(
     
     # Create samples based on task type
     samples = []
-    for task in tasks:
+    for i, task in enumerate(tasks):
+        try:
             available_tools = []  # Placeholder
-            sample = create_tool_calling_sample(task, data["data"], available_tools)
-        else:
-            raise ValueError(f"Unknown task_type: {task_type}")
-        
+            sample = create_tool_calling_sample(task, data["data"], available_tools, i)
+        except Exception as e:
+            print(f"Warning: Could not create sample for task {e}")
+            continue
         samples.append(sample)
     
-    return Dataset(samples=samples)
+    return MemoryDataset(samples=samples)
