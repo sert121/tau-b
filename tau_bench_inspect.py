@@ -88,6 +88,27 @@ def create_tau_bench_scorer() -> Scorer:
     return score
 
 
+'''
+@task
+def create_tau_bench_task_retail(
+    task_split: str = "test",
+    user_strategy: str = "llm", 
+    user_model: str = "gpt-4o",
+    max_steps: int = 30,
+    temperature: float = 0.0
+) -> Task:
+    """
+    Create a retail domain tau-bench task for inspect_ai evaluation.
+    """
+    dataset = tau_bench_dataset(domain="retail", split=task_split)
+    env = create_tau_bench_env("retail", user_strategy, user_model, task_split, user_provider="openai")
+    tools_info = load_tau_bench_tools("retail")
+    wiki = load_wiki_content("retail")
+    solver = tool_calling_agent(env=env, tools_info=tools_info, wiki=wiki, max_steps=max_steps, temperature=temperature)
+    scorer = create_tau_bench_scorer()
+    return Task(dataset=dataset, solver=solver, scorer=scorer)
+'''
+
 
 @task
 def create_tau_bench_task_airline(
