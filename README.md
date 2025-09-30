@@ -12,21 +12,19 @@
 ### Basic Evaluation
 
 ```bash
-# Run airline domain evaluation
-inspect eval tau_bench_inspect.py --model groq/llama-3.1-8b-instant --max-samples 5
+# Run airline domain evaluation (react style)
+inspect eval tau_bench_inspect.py -T base_model=openai/gpt-4o -T domain=airline -T agent_mode=react
 
-# Run retail domain evaluation  
-inspect eval tau_bench_inspect.py --model groq/llama-3.1-8b-instant --max-samples 5
+# Run retail domain evaluation  (react style)
+inspect eval tau_bench_inspect.py -T base_model=openai/gpt-4o -T domain=retail -T agent_mode=react
 ```
 
-### With Different Models
+### With Different Base and user model (simualted user)
 
 ```bash
 # Using OpenAI
-inspect eval tau_bench_inspect.py --model openai/gpt-4o-mini --max-samples 5
+inspect eval tau_bench_inspect.py -T base_model=openai/gpt-4o -T domain=airline -T agent_mode=react -T user_model=openai/gpt-4o-mini
 
-# Using Anthropic
-inspect eval tau_bench_inspect.py --model anthropic/claude-3-5-sonnet-20241022 --max-samples 5
 ```
 
 ## Configuration
@@ -56,3 +54,14 @@ The system supports various LLM providers through inspect_ai:
 ## License
 
 This integration follows the same license as the original tau-bench project.
+
+## Results
+
+# Tau-Bench Evaluation Results
+
+(user model is also gpt4o)
+
+| Domain  | Agent Mode | Base Model    | Samples | Accuracy |
+|---------|------------|---------------|---------|----------|
+| retail  | react      | openai/gpt-4o | 115     | 0.548    |
+| airline | react      | openai/gpt-4o | 50      | 0.460    |
