@@ -15,7 +15,7 @@ from inspect_ai.scorer import Scorer, Score, Target, scorer, accuracy
 from inspect_ai.solver import TaskState
 
 from dataset import tau_bench_dataset, load_tau_bench_tools
-from agents import tool_calling_agent
+from agents import tool_calling_agent, chat_react_agent
 from envs import get_env
 from envs.user import UserStrategy
 
@@ -107,9 +107,10 @@ def create_tau_bench_task_retail(
     solver = tool_calling_agent(env=env, tools_info=tools_info, wiki=wiki, max_steps=max_steps, temperature=temperature)
     scorer = create_tau_bench_scorer()
     return Task(dataset=dataset, solver=solver, scorer=scorer)
+
 '''
 
-
+'''
 @task
 def create_tau_bench_task_airline(
     task_split: str = "test",
@@ -146,6 +147,107 @@ def create_tau_bench_task_airline(
         wiki=wiki,
         max_steps=max_steps,
         temperature=temperature
+    )
+      
+    # Create scorer
+    scorer = create_tau_bench_scorer()
+      
+    return Task(dataset=dataset, solver=solver, scorer=scorer)
+
+'''
+
+'''
+@task
+def create_tau_bench_task_airline_react(
+    task_split: str = "test",
+    user_strategy: str = "llm", 
+    user_model: str = "gpt-4o",
+    max_steps: int = 30,
+    temperature: float = 0.0,
+    use_reasoning: bool = True,
+    base_model: str = "openai/gpt-4o-mini"
+
+) -> Task:  
+    """
+    Create an airline domain tau-bench task using ChatReAct agent for inspect_ai evaluation.
+    
+    Args:
+        task_split: Data split to use ("train", "test", "dev")
+        user_strategy: User simulation strategy
+        user_model: Model for user simulation
+        max_steps: Maximum number of agent steps
+        temperature: Temperature for generation
+        use_reasoning: Whether to include reasoning steps in ReAct
+    
+    Returns:
+        Task object for inspect_ai evaluation
+    """
+    # Load dataset  
+    dataset = tau_bench_dataset(domain="airline", split=task_split)  
+      
+    # Create environment and tools
+    env = create_tau_bench_env("airline", user_strategy, user_model, task_split, user_provider="openai")
+    tools_info = load_tau_bench_tools("airline")  
+    wiki = load_wiki_content("airline")
+      
+    # Create solver using ChatReAct agent
+    solver = chat_react_agent(
+        env=env,
+        tools_info=tools_info, 
+        wiki=wiki,
+        max_steps=max_steps,
+        temperature=temperature,
+        use_reasoning=use_reasoning,
+        base_model=base
+
+    )
+      
+    # Create scorer
+    scorer = create_tau_bench_scorer()
+      
+    return Task(dataset=dataset, solver=solver, scorer=scorer)
+'''
+
+
+@task
+def create_tau_bench_task_retail_react(
+    task_split: str = "test",
+    user_strategy: str = "llm", 
+    user_model: str = "gpt-4o",
+    max_steps: int = 30,
+    temperature: float = 0.0,
+    use_reasoning: bool = True
+) -> Task:  
+    """
+    Create a retail domain tau-bench task using ChatReAct agent for inspect_ai evaluation.
+    
+    Args:
+        task_split: Data split to use ("train", "test", "dev")
+        user_strategy: User simulation strategy
+        user_model: Model for user simulation
+        max_steps: Maximum number of agent steps
+        temperature: Temperature for generation
+        use_reasoning: Whether to include reasoning steps in ReAct
+    
+    Returns:
+        Task object for inspect_ai evaluation
+    """
+    # Load dataset  
+    dataset = tau_bench_dataset(domain="retail", split=task_split)  
+      
+    # Create environment and tools
+    env = create_tau_bench_env("retail", user_strategy, user_model, task_split, user_provider="openai")
+    tools_info = load_tau_bench_tools("retail")  
+    wiki = load_wiki_content("retail")
+      
+    # Create solver using ChatReAct agent
+    solver = chat_react_agent(
+        env=env,
+        tools_info=tools_info, 
+        wiki=wiki,
+        max_steps=max_steps,
+        temperature=temperature,
+        use_reasoning=use_reasoning
     )
       
     # Create scorer
