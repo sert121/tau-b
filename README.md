@@ -43,6 +43,9 @@ The system supports various LLM providers through inspect_ai:
 - `groq`: Groq API client (optional)
 - `openai`: OpenAI API client (optional)
 - `anthropic`: Anthropic API client (optional)
+## Data folders
+airline and retail are folders for data, and envs contain the environment for each respectively.
+
 
 ## License
 
