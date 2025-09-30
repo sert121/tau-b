@@ -1,11 +1,4 @@
 
-## Available Evaluations
-
-### Airline Domain
-- `create_tau_bench_task_airline`: Tool-calling evaluation for airline customer service
-
-### Retail Domain  
-- `create_tau_bench_task_retail`: Tool-calling evaluation for retail customer service
 
 ## Usage
 
@@ -65,3 +58,6 @@ This integration follows the same license as the original tau-bench project.
 |---------|------------|---------------|---------|----------|
 | retail  | react      | openai/gpt-4o | 115     | 0.548    |
 | airline | react      | openai/gpt-4o | 50      | 0.460    |
+
+![Image_1](https://ibb.co/0RW97B6V)  
+![Image_2](https://ibb.co/39g7K3G4)
