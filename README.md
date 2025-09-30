@@ -60,4 +60,4 @@ This integration follows the same license as the original tau-bench project.
 | airline | react      | openai/gpt-4o | 50      | 0.460    |
 
 Image: https://ibb.co/0RW97B6V
-Image: https://ibb.co/39g7K3G4
+Image : https://ibb.co/39g7K3G4
